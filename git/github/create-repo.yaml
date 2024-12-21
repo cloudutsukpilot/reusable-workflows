@@ -1,0 +1,81 @@
+name: Create Repository and Push Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo-name:
+        description: "Name of the new repository"
+        required: true
+      repo-description:
+        description: "Description of the new repository"
+        required: false
+        default: "This repository was created via GitHub Actions."
+
+jobs:
+  create-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Build Repository Name
+        id: build-repo-name
+        run: |
+          REPO_NAME="${{ github.event.inputs.team-name }}-${{ github.event.inputs.project-name }}-${{ github.event.inputs.environment }}"
+          echo "repo_name=$REPO_NAME" >> $GITHUB_OUTPUT
+          
+      - name: Check if repository exists
+        id: check-repo
+        run: |
+          REPO_NAME="${{ github.event.inputs.repo-name }}"
+          REPO_OWNER="${{ github.repository_owner }}"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/$REPO_OWNER/$REPO_NAME)
+          if [ "$STATUS" -eq 200 ]; then
+            echo "Repository $REPO_NAME already exists."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      # Conditionally create the repository
+      - name: Create GitHub Repository
+        if: steps.check-repo.outputs.exists == 'false'
+        uses: github:create-repository@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ github.event.inputs.repo-name }}
+          description: ${{ github.event.inputs.repo-description }}
+          private: false # Set to true for private repositories
+      # Create a new repository
+      - name: Create GitHub Repository
+        id: create-github-repo
+        uses: github:create-repository@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: ${{ github.event.inputs.repo-name }}
+          description: ${{ github.event.inputs.repo-description }}
+          private: false # Set to true for private repositories
+
+      # Clone the new repository
+      - name: Clone New Repository
+        run: |
+          git clone https://github.com/${{ github.repository_owner }}/${{ github.event.inputs.repo-name }} new-repo
+          echo "New repository cloned successfully."
+
+      # Copy files into the new repository
+      - name: Copy Files to New Repository
+        run: |
+          cp -r ./source-folder/* ./new-repo/
+          echo "Files copied to the new repository."
+
+      # Commit and Push Files to the New Repository
+      - name: Commit and Push Changes
+        run: |
+          cd new-repo
+          git config --global user.name "${{ github.actor }}"
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+          git add .
+          git commit -m "Initial commit with files"
+          git branch -M main
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository_owner }}/${{ github.event.inputs.repo-name }}.git main
+
