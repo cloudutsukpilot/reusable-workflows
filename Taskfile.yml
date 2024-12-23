@@ -8,3 +8,8 @@ tasks:
       - git add .
       - git commit -m "{{.CLI_ARGS}}"
       - git push
+
+  ga-create-repo:
+    desc: Run the Create Repo Pipeline
+    cmds:
+      - act -j create-repository -e .github/workflows/git/github/create-repo-inputs.json --pull=false --action-offline-mode

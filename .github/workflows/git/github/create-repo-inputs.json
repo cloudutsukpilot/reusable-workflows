@@ -1,0 +1,14 @@
+{
+    "inputs": {
+      "repository_owner": "",
+      "organization_name": "cloudutsukpilot",
+      "username": "sakharams",
+      "repository_name": "test-repo",
+      "private": "true",
+      "repository_description": "Test Repository",
+      "domain_name": "cloudutsuk.com",
+      "source_folder_path": ".github/workflows/cloud/azure/compute/serverless/function-app/",
+      "destination_folder_path": ".github/workflows"
+    }
+  }
+  

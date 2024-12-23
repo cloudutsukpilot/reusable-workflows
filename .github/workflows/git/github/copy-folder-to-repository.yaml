@@ -1,0 +1,152 @@
+name: Copy Folder to Repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository_owner:
+        description: "Name of the new repository"
+        required: true
+      organization_name:
+        description: "Name of the organization"
+        required: true
+      username:
+        description: "Name of the User"
+        required: true
+      repository_name:
+        description: "Name of the repository"
+        required: true
+      source_folder_path:
+        description: "Path of the folder to copy"
+        required: true
+      destination_folder_path:
+        description: "Path of the folder to copy"
+        required: true
+
+  workflow_call:
+    inputs:
+      repository_owner:
+        description: "Name of the new repository"
+        required: true
+      organization_name:
+        description: "Name of the organization"
+        required: true
+      username:
+        description: "Name of the User"
+        required: true
+      repository_name:
+        description: "Name of the repository"
+        required: true
+      source_folder_path:
+        description: "Path of the folder to copy"
+        required: true
+      destination_folder_path:
+        description: "Path of the folder to copy"
+        required: true
+
+jobs:
+  copy-folder-to-repository:
+    runs-on: ubuntu-latest
+
+    steps: 
+      # Checkout the reusable-workflow repository
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Check if repository exists
+        id: check-repository
+        run: |
+          REPOSITORY_NAME="${{ github.event.inputs.repository_name }}"
+          REPOSITORY_OWNER="${{ github.event.inputs.repository_owner}}"
+          ORGANIZATION_NAME="${{ github.event.inputs.organization_name }}"
+
+          if [ -n "$REPOSITORY_OWNER" ]; then
+            echo "Checking if the repository exists in the user repository."
+            REPOSITORY_URL="$REPOSITORY_OWNER/$REPOSITORY_NAME"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              https://api.github.com/repos/$REPOSITORY_OWNER/$REPOSITORY_NAME)
+          else
+            echo "Checking if the repository exists in the organization."
+            REPOSITORY_URL="https://api.github.com/repos/$ORGANIZATION_NAME/$REPOSITORY_NAME"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              https://api.github.com/repos/$ORGANIZATION_NAME/$REPOSITORY_NAME)
+          fi
+
+          if [ "$STATUS" -eq 200 ]; then
+            echo "Repository: $REPOSITORY_URL exists."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Repository: $REPOSITORY_URL does not exist."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Clone Repository
+        id: clone-repository
+        if: steps.check-repository.outputs.exists == 'true'
+        run: |
+          REPOSITORY_NAME="${{ github.event.inputs.repository_name }}"
+          REPOSITORY_OWNER="${{ github.event.inputs.repository_owner}}"
+          ORGANIZATION_NAME="${{ github.event.inputs.organization_name }}"
+
+          if [ -n "$REPOSITORY_OWNER" ]; then
+            git clone https://$ORGANIZATION_NAME:${{ secrets.GITHUB_TOKEN }}@github.com/$REPOSITORY_OWNER/$REPOSITORY_NAME.git
+          else
+            git clone https://$ORGANIZATION_NAME:${{ secrets.GITHUB_TOKEN }}@github.com/$ORGANIZATION_NAME/$REPOSITORY_NAME.git
+          fi
+        shell: bash
+
+      - name: Copy Files 
+        id: copy-files
+        if: steps.check-repository.outputs.exists == 'true'
+        run: |
+          SOURCE_PATH="${{ github.event.inputs.source_folder_path }}"
+          DESTINATION_PATH="${{ github.event.inputs.repository_name }}/${{ github.event.inputs.destination_folder_path }}"
+          echo "Copying files from $SOURCE_PATH to $DESTINATION_PATH"
+          mkdir -p $DESTINATION_PATH
+          cp -r $SOURCE_PATH/* $DESTINATION_PATH/
+
+      - name: Configure git
+        if: steps.check-repository.outputs.exists == 'true'
+        run: | 
+          git config --global user.email "${{ github.event.inputs.username }}@${{ github.event.inputs.domain }}"
+          git config --global user.name "${{ github.event.inputs.username }}"
+          git config --global init.defaultBranch main
+      
+      - name: Commit Changes
+        id: commit-changes
+        if: steps.check-repository.outputs.exists == 'true'
+        run: |
+          cd ${{ github.event.inputs.repository_name }}
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Changes detected. Committing changes."
+            git add .
+            git commit -m "Adding or updating files in destination folder"
+            git push --set-upstream origin main
+          else
+            echo "No changes to commit. Skipping."
+          fi
+        shell: bash
+
+      - name: List Files in Destination Repository
+        id: list-files
+        if: steps.check-repository.outputs.exists == 'true'
+        run: |
+          REPOSITORY_NAME="${{ github.event.inputs.repository_name }}"
+          REPOSITORY_OWNER="${{ github.event.inputs.repository_owner}}"
+          DESTINATION_PATH="${{ github.event.inputs.destination_folder_path }}"
+          ORGANIZATION_NAME="${{ github.event.inputs.organization_name }}"
+          echo "Fetching contents of destination repository ($DESTINATION_PATH) in repository $REPOSITORY_OWNER/$REPOSITORY_NAME"
+
+          if [ -n "$REPOSITORY_OWNER" ]; then
+            REPOSITORY_PATH=$REPOSITORY_OWNER
+          else
+            REPOSITORY_PATH=$ORGANIZATION_NAME
+          fi
+
+          RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/$REPOSITORY_PATH/$REPOSITORY_NAME/contents/$DESTINATION_PATH")
+
+          # Display the result of the API call
+          echo "Files in $DESTINATION_PATH:"
+          echo $RESPONSE | jq '.[] | .name'
+        shell: bash
